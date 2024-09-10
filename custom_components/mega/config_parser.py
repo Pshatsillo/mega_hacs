@@ -50,6 +50,13 @@ def parse_config(page: str):
     return Config(**ret, src=page)
 
 
+def get_ext_mode(page: str):
+    page = BeautifulSoup(page, features="lxml")
+    if page.find('select', attrs={'name': 'ety'}) is not None:
+        if 'value' in page.find('select', attrs={'name': 'ety'}).find(selected=True):
+            mode = page.find('select', attrs={'name': 'ety'}).find(selected=True)['value']
+            return mode
+
 DIGITAL_IN = Config(pty="0")
 RELAY_OUT = Config(pty="1", m="0")
 PWM_OUT = Config(pty="1", m="1")
@@ -59,4 +66,3 @@ MCP230_OUT = Config(ety="1")
 MCP230_IN = Config(ety="0")
 PCA9685 = Config(pty="4", m="1", gr="3", d="21")
 OWIRE_BUS = Config(pty="3", d="5")
-
