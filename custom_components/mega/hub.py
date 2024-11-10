@@ -576,8 +576,8 @@ class MegaD:
                 for n in range(len(values)):
                     pt = f"{port}e{n}"
                     name = pt if not self.new_naming else f"{port:02}e{n:02}"
-                    type = await self.request(pt=port, ext=f"{n}")
-                    port_mode = get_ext_mode(type)
+                    port_type = await self.request(pt=port, ext=f"{n}")
+                    port_mode = get_ext_mode(port_type)
                     if port_mode == '0':
                         ret["light"][pt].append(
                             {
