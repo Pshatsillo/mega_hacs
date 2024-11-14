@@ -266,9 +266,6 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     new.update(cfg)
     _LOGGER.debug(f'new config: %s', new)
     await async_update_entry(hass, config_entry)
-    # config_entry.data = new
-    # config_entry.version = ConfigFlow.VERSION
-
     _LOGGER.info("Migration to version %s successful", config_entry.version)
 
     return True
@@ -281,9 +278,10 @@ async def async_update_entry(hass, config_entry: ConfigEntry):
     await hub.stop()
     new.update(cfg)
     _LOGGER.debug(f'new config: %s', new)
-    config_entry.data = new
-    config_entry.version = ConfigFlow.VERSION
+    hass.config_entries.async_update_entry(config_entry, data=new)
     return True
+
+
 
 async def _save_service(hass: HomeAssistant, call: ServiceCall):
     mega_id = call.data.get('mega_id')
