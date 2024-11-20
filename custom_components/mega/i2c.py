@@ -8,7 +8,7 @@ from homeassistant.const import (
     PERCENTAGE,
     LIGHT_LUX,
     CONCENTRATION_PARTS_PER_MILLION,
-    UnitOfTemperature, UnitOfPressure,
+    UnitOfTemperature, UnitOfPressure, CONCENTRATION_PARTS_PER_CUBIC_METER,
 )
 from collections import namedtuple
 
@@ -107,6 +107,12 @@ i2c_classes = {
     ],
     'bmx280': [
         DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
+        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+        DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
+    ],
+    'scd4x': [
+        Skip,
+        DeviceType(SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, None),
         DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
         DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
     ],
