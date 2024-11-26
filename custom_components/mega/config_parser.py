@@ -53,7 +53,7 @@ def parse_config(page: str):
 def get_ext_mode(page: str):
     page = BeautifulSoup(page, features="lxml")
     if page.find('select', attrs={'name': 'ety'}) is not None:
-        if 'value' in page.find('select', attrs={'name': 'ety'}).find(selected=True):
+        if page.find('select', attrs={'name': 'ety'}).find(selected=True)['value']:
             mode = page.find('select', attrs={'name': 'ety'}).find(selected=True)['value']
             return mode
 
