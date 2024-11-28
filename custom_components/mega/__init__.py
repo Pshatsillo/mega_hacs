@@ -270,19 +270,6 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
 
     return True
 
-async def async_update_entry(hass, config_entry: ConfigEntry):
-    hub = await get_hub(hass, config_entry)
-    new = dict(config_entry.data)
-    await hub.start()
-    cfg = await hub.get_config()
-    await hub.stop()
-    new.update(cfg)
-    _LOGGER.debug(f'new config: %s', new)
-    hass.config_entries.async_update_entry(config_entry, data=new, version=ConfigFlow.VERSION)
-    return True
-
-
-
 async def _save_service(hass: HomeAssistant, call: ServiceCall):
     mega_id = call.data.get('mega_id')
     if mega_id:

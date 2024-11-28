@@ -144,23 +144,14 @@ class BaseMegaEntity(CoordinatorEntity, RestoreEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        if isinstance(self.port, list):
-            pt_idx = self.id_suffix
-        else:
-            _pt = self.port if not self.mega.new_naming else f'{self.port:02}' if isinstance(self.port, int) else self.port
-            if isinstance(_pt, str) and 'e' in _pt:
-                pt_idx, _ = _pt.split('e')
-            else:
-                pt_idx = _pt
         return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, f'{self._mega_id}', pt_idx)
-            },
-            name=self.name,
-            manufacturer='ab-log.ru',
-            sw_version=self.mega.fw,
-            via_device=(DOMAIN, self._mega_id),
+            identifiers={(DOMAIN, f"mega{self._mega_id}")},
+            name=f"Mega device ID: {self._mega_id}",
+            manufacturer="ab-log.ru",
+            model_id=f"{self.mega.host}",
+            sw_version=f"{self.mega.fw}",
+            # serial_number=f"{self._megaID}",
+            configuration_url = f"http://{self.mega.host}/{self.mega.sec}"
         )
 
     @property
