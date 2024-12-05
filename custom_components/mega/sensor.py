@@ -93,6 +93,9 @@ class FilterBadValues(MegaPushEntity, SensorEntity):
 
     def filter_value(self, value):
         try:
+            if isinstance(value, str) and value == 'NA':
+                value = None
+                
             if value is not None and \
             (
                 value in self.filter_values 
