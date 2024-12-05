@@ -4,7 +4,7 @@ import voluptuous as vol
 import struct
 
 from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA as SENSOR_SCHEMA, SensorEntity, SensorDeviceClass
+    PLATFORM_SCHEMA as SENSOR_SCHEMA, SensorEntity, SensorStateClass
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -33,14 +33,7 @@ PATTERNS = {
     HUM: HUM_PATT,
 }
 
-UNITS = {
-    TEMP: '°C',
-    HUM: '%'
-}
-CLASSES = {
-    TEMP: SensorDeviceClass.TEMPERATURE,
-    HUM: SensorDeviceClass.HUMIDITY
-}
+
 # Validation of the user's configuration
 _ITEM = {
     vol.Required(CONF_PORT): int,
@@ -63,20 +56,6 @@ PLATFORM_SCHEMA = SENSOR_SCHEMA.extend(
 async def async_setup_platform(hass, config, add_entities, discovery_info=None):
     lg.warning('mega integration does not support yaml for sensors, please use UI configuration')
     return True
-
-
-def _make_entity(config_entry, mid: str, port: int, conf: dict):
-    key = conf[CONF_KEY]
-    return Mega1WSensor(
-        key=key,
-        mega_id=mid,
-        port=port,
-        patt=PATTERNS.get(key),
-        unit_of_measurement=UNITS.get(key, UNITS[TEMP]),  # TODO: make other units, make options in config flow
-        device_class=CLASSES.get(key, CLASSES[TEMP]),
-        id_suffix=key,
-        config_entry=config_entry
-    )
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_devices):
@@ -114,25 +93,25 @@ class FilterBadValues(MegaPushEntity, SensorEntity):
 
     def filter_value(self, value):
         try:
-            if value \
-                    in self.filter_values \
-                    or (self.filter_low is not None and value < self.filter_low) \
-                    or (self.filter_high is not None and value > self.filter_high) \
-                    or (
+            if value is not None and \
+            (
+                value in self.filter_values 
+                or (self.filter_low is not None and value < self.filter_low) 
+                or (self.filter_high is not None and value > self.filter_high) 
+                or (
                     self._prev_value is not None
                     and self.filter_scale is not None
-                    and (
-                            abs(value - self._prev_value) / self._prev_value > self.filter_scale
+                    and (abs(value - self._prev_value) / self._prev_value > self.filter_scale)
                     )
             ):
-                if self.fill_na == 'last':
-                    value = self._prev_value
-                else:
-                    value = None
+                value = None
+
+            if value is None and self.fill_na == 'last':
+                value = self._prev_value
             self._prev_value = value
             return value
         except Exception as exc:
-            lg.exception(f'while parsing value')
+            lg.exception(f'while filtering value')
             return None
 
     @property
@@ -217,13 +196,16 @@ class MegaI2C(FilterBadValues):
             if ret is not None:
                 return str(ret)
         except Exception:
-            lg.exception('while getting value')
+            lg.exception('while parsing value')
             return None
 
     @property
     def device_class(self):
         return self._device_class
 
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
 
 class Mega1WSensor(FilterBadValues):
 
@@ -279,6 +261,10 @@ class Mega1WSensor(FilterBadValues):
             return _u[self.key]
         else:
             return self._device_class
+    
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self):
@@ -326,7 +312,7 @@ class Mega1WSensor(FilterBadValues):
             if ret is not None:
                 return str(ret)
         except Exception:
-            lg.exception('while parsing state')
+            lg.exception('while parsing value')
             return None
 
     @property
