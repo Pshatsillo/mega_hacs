@@ -59,6 +59,7 @@ PLATFORMS = [
     Platform.SWITCH,
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
+    Platform.CLIMATE
 ]
 EVENT_BINARY_SENSOR = f'{DOMAIN}.sensor'
 EVENT_BINARY = f'{DOMAIN}.binary'

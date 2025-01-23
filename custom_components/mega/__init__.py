@@ -28,6 +28,17 @@ _LOGGER = logging.getLogger(__name__)
 
 _port_n = vol.Any(int, str)
 
+CLIMATE_ENTITY = \
+    {
+        str: vol.Any(
+            {
+                vol.Required('temperature'): int,
+            },
+            {
+                vol.Required('relay'): int,
+            }
+        )
+    }
 LED_LIGHT = \
     {
         str: vol.Any(
@@ -140,8 +151,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_FILTER_SCALE): vol.Coerce(float),
                 vol.Optional(CONF_FILTER_LOW): vol.Coerce(float),
                 vol.Optional(CONF_FILTER_HIGH): vol.Coerce(float),
+                vol.Optional('climate'): CLIMATE_ENTITY,
             },
-            vol.Optional(CONF_1WBUS): [OWBUS]
+            vol.Optional(CONF_1WBUS): [OWBUS],
         }
     },
     extra=vol.ALLOW_EXTRA,
