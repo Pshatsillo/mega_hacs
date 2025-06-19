@@ -1,0 +1,20 @@
+{
+  "domain": "mega_petros",
+  "name": "Mega integration by Petros",
+  "codeowners": [
+    "@pshatsillo"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://www.home-assistant.io/integrations/mega_petros",
+  "homekit": {},
+  "iot_class": "local_polling",
+  "quality_scale": "bronze",
+  "requirements": [
+    "beautifulsoup4",
+    "lxml"
+  ],
+  "ssdp": [],
+  "zeroconf": [],
+  "version": "0.1"
+}
