@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import SCAN_INTERVAL, DOMAIN, PATT_FW
-from .enums import Type, Mode, Dev, ModeI2C, DevI2C
+from .enums import Type, Mode, Dev, ModeI2C, DevI2C, MCP230XXType, PCA9685Type
 from .model import Mega
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,20 +57,26 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         if "[45" in response:
             self.ports_count = 45
         self.firmware = PATT_FW.search(response).groups()[0]
-        await self.get_all_ports_data(self.mega.base_url, self.ports_count)
+        await self.get_all_ports_config(self.mega.base_url, self.ports_count)
         _LOGGER.warning(f"MegaCoordinator async_config_entry_first_refresh")
         await super().async_config_entry_first_refresh()
 
-    async def get_all_ports_data(self, base_url, num_ports):
+    async def get_all_ports_config(self, base_url, num_ports):
         timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             for port in range(num_ports):
                 # Выполняем запросы строго по одному
-                result = await fetch_port_data(session, base_url, port)
+                result: Mega.Port = await fetch_port_config(self.mega, session, base_url, port)
                 if result is not None:
                     self.mega.ports[port] = result
-#TODO need to be adopted
-def parse_port_data(port, html, ext=None):
+                    if result.port_type is Type.I2C and result.dev is DevI2C.MCP230XX or result.dev is DevI2C.PCA9685:
+                        for port_extender in range(16):
+                            extender_result = await fetch_port_config(self.mega, session, base_url, port, port_extender)
+                            result.extender_port[port_extender] = extender_result
+
+
+# TODO need to be adopted
+def parse_port_config(mega, port, html, ext=None):
     try:
         soup = BeautifulSoup(html, "html.parser")
         form = soup.select("form")[-1] if soup.select("form") else None
@@ -88,13 +94,14 @@ def parse_port_data(port, html, ext=None):
                 if ept_value and ept_value is not None:
                     title = re.sub(r'\{.*?\}', '', ept_value)
                     title = title.strip()
-                    # config = parse_as_json(ept_value)
-
-                return {
-                    "etype": int(ety_value),
-                    "etitle": title,
-                    "config": config
-                }
+                    config = parse_as_json(ept_value)
+                external_type = None
+                if mega.ports[port].dev is DevI2C.MCP230XX:
+                    external_type = MCP230XXType(int(ety_value))
+                else:
+                    if mega.ports[port].dev is DevI2C.PCA9685:
+                        external_type = PCA9685Type(int(ety_value))
+                return Mega.Port.Extender(external_type, title, config)
             else:
                 return None
 
@@ -134,7 +141,8 @@ def parse_port_data(port, html, ext=None):
         _LOGGER.debug(f"Ошибка парсинга данных для порта {port}: {e}")
         return None
 
-async def fetch_port_data(session, base_url, port, ext=None):
+
+async def fetch_port_config(mega, session, base_url, port, ext=None):
     url = f"{base_url}?pt={port}"
     if ext is not None:
         url += f"&ext={ext}"
@@ -142,7 +150,7 @@ async def fetch_port_data(session, base_url, port, ext=None):
         _LOGGER.debug(f"Fetching URL: {url}")
         async with session.get(url) as response:
             html = await response.text(encoding="windows-1251")
-            return parse_port_data(port, html)
+            return parse_port_config(mega, port, html, ext)
     except Exception as e:
         _LOGGER.debug(f"Ошибка при запросе порта {port}: {e}")
         return None

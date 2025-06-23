@@ -24,6 +24,13 @@ class DevI2C(Enum):
     NC = 0
     MCP230XX = 20
     PCA9685 = 21
+class MCP230XXType(Enum):
+    IN = 0
+    OUT = 1
+
+class PCA9685Type(Enum):
+    PWM = 0
+    SW = 1
 
 class Dev(Enum):
     NC = 0

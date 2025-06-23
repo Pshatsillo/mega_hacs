@@ -30,5 +30,12 @@ class Mega:
             self.title = title
             self.config = config
             self.port_int = None
+            self.extender_port = {}
             if port_int is not None:
                self.port_int =int(port_int)
+
+        class Extender:
+            def __init__(self, port_type, title, config):
+                self.port_type = port_type
+                self.title = title
+                self.config = config
