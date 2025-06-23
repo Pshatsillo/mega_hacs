@@ -2,19 +2,17 @@
 import json
 import logging
 import re
-import urllib
-
 from typing import Any, cast
 
 import aiohttp
-import requests
 from bs4 import BeautifulSoup
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import SCAN_INTERVAL, DOMAIN, PATT_FW
+from .enums import Type, Mode, Dev, ModeI2C, DevI2C
+from .model import Mega
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +28,7 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             hass,
             config_entry=entry,
             logger=_LOGGER,
-            name="AdaxLocal",
+            name="MegaCoordinator",
             update_interval=SCAN_INTERVAL,
         )
         self.firmware = None
@@ -59,15 +57,22 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         if "[45" in response:
             self.ports_count = 45
         self.firmware = PATT_FW.search(response).groups()[0]
-        self.mega.ports = await get_all_ports_data(self.mega.base_url, self.ports_count)
+        await self.get_all_ports_data(self.mega.base_url, self.ports_count)
         _LOGGER.warning(f"MegaCoordinator async_config_entry_first_refresh")
         await super().async_config_entry_first_refresh()
 
+    async def get_all_ports_data(self, base_url, num_ports):
+        timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for port in range(num_ports):
+                # Выполняем запросы строго по одному
+                result = await fetch_port_data(session, base_url, port)
+                if result is not None:
+                    self.mega.ports[port] = result
 #TODO need to be adopted
-def parse_port_data(port, html, ext):
+def parse_port_data(port, html, ext=None):
     try:
         soup = BeautifulSoup(html, "html.parser")
-        # form = soup.find("form")
         form = soup.select("form")[-1] if soup.select("form") else None
 
         if ext is not None:
@@ -78,13 +83,12 @@ def parse_port_data(port, html, ext):
             ept_value = ept["value"] if ept else None
 
             if ety_value is not None and ety_value != "255":
-
                 title = None
                 config = None
                 if ept_value and ept_value is not None:
                     title = re.sub(r'\{.*?\}', '', ept_value)
                     title = title.strip()
-                    config = parse_as_json(ept_value)
+                    # config = parse_as_json(ept_value)
 
                 return {
                     "etype": int(ety_value),
@@ -106,28 +110,23 @@ def parse_port_data(port, html, ext):
             emt_value = emt["value"] if emt else None
             d_value = d.find("option", selected=True)["value"] if d else "0"
             inta_value = inta["value"] if inta else None
-            if inta_value and inta_value is not None:
-                port_inta[int(inta_value)] = port
 
             if pty_value is not None and pty_value != "255":
-                # config = parse_as_json(emt_value)
-                # _LOGGER.debug(f"config: {config}")
                 title = None
                 config = None
                 if emt_value:
                     title = re.sub(r'\{.*?\}', '', emt_value)
                     title = title.strip()
                     config = parse_as_json(emt_value)
-                return {
-                    "port": port,
-                    "type": int(pty_value),
-                    "mode": int(m_value),
-                    "dev": int(d_value),
-                    "bus": {},
-                    "parent": 255,
-                    "title": title,
-                    "config": config
-                }
+                if Type(int(pty_value)) is Type.I2C:
+                    mode = ModeI2C(int(m_value))
+                    dev = DevI2C(int(d_value))
+                else:
+                    mode = Mode(int(m_value))
+                    dev = Dev(int(d_value))
+                if mode is not ModeI2C.SCL:
+                    return Mega.Port(port, Type(int(pty_value)), mode, dev, inta_value, title, config)
+                return None
             else:
                 return None
 
@@ -135,28 +134,33 @@ def parse_port_data(port, html, ext):
         _LOGGER.debug(f"Ошибка парсинга данных для порта {port}: {e}")
         return None
 
-async def fetch_port_data(session, base_url, port, ext):
+async def fetch_port_data(session, base_url, port, ext=None):
     url = f"{base_url}?pt={port}"
     if ext is not None:
         url += f"&ext={ext}"
     try:
-        #if port:
-        #    await asyncio.sleep(0.15)
         _LOGGER.debug(f"Fetching URL: {url}")
         async with session.get(url) as response:
             html = await response.text(encoding="windows-1251")
-            return parse_port_data(port, html, ext)
+            return parse_port_data(port, html)
     except Exception as e:
         _LOGGER.debug(f"Ошибка при запросе порта {port}: {e}")
         return None
 
 
-async def get_all_ports_data(base_url, num_ports):
-    timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
-    ports = {}
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        for port in range(num_ports):
-            # Выполняем запросы строго по одному
-            result = await fetch_port_data(session, base_url, port, None)
-            if result is not None:
-                ports[result["port"]] = result
+def parse_as_json(data):
+    # Извлекаем текст внутри первых фигурных скобок
+    match = re.search(r'\{.*?\}', data)
+    if not match:
+        return None
+        # raise ValueError("No JSON-like structure found in the input string.")
+
+    json_part = match.group(0)  # Достаём текст, включая фигурные скобки
+    # Убираем пробелы и кавычки
+    json_part = re.sub(r'[\'"\s]', '', json_part).lower()
+    json_like = '{' + ','.join(
+        f'"{k}":"{v}"' for k, v in (pair.split(':', 1) for pair in re.split(r'[;,]', json_part.strip('{}')))) + '}'
+
+    # _LOGGER.debug(f"json like config: {json_like}")
+
+    return json.loads(json_like)

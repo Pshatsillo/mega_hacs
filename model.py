@@ -1,11 +1,9 @@
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from . import MegaCoordinator
 from .const import DOMAIN
 
 
-class Mega():
+class Mega:
     def __init__(self, hass: HomeAssistant, entry_id, host: str, mega_id: str, password: str):
         self.hass = hass
         self.entry_id = entry_id
@@ -24,3 +22,13 @@ class Mega():
             model_id=f"Mega-2561",
             configuration_url=f"http://{self.host}/{self.password}",
         )
+    class Port:
+        def __init__(self, port, port_type, mode, dev, port_int, title, config):
+            self.port_type = port_type
+            self.mode = mode
+            self.dev = dev
+            self.title = title
+            self.config = config
+            self.port_int = None
+            if port_int is not None:
+               self.port_int =int(port_int)
