@@ -40,7 +40,12 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the Mega."""
-        _LOGGER.warning("MegaCoordinator update")
+        for port, port_config in self.mega.ports.items():
+            cmd = f"pt={port}&cmd=get"
+            response = await self.send_request(cmd)
+            if response:
+                self.mega.ports[port].state = response
+                _LOGGER.warning(f" State of port {port} is {response}")
         return cast(dict[str, Any], "result")
 
     async def async_config_entry_first_refresh(self) -> None:
@@ -74,8 +79,20 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                             extender_result = await fetch_port_config(self.mega, session, base_url, port, port_extender)
                             result.extender_port[port_extender] = extender_result
 
+    async def send_request(self, cmd):
+        url = f"{self.mega.base_url}?{cmd}"
+        timeout = aiohttp.ClientTimeout(total=self.mega.http_timeout, connect=1, sock_connect=1, sock_read=1)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        rsp = await response.text(encoding="windows-1251")
+                        return rsp
+            except aiohttp.ClientError as e:
+                _LOGGER.debug(f"Ошибка отправки запроса: {e} url:{url}")
+        return False
 
-# TODO need to be adopted
+
 def parse_port_config(mega, port, html, ext=None):
     try:
         soup = BeautifulSoup(html, "html.parser")

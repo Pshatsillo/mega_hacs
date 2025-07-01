@@ -1,7 +1,10 @@
+import logging
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
 
 class Mega:
     def __init__(self, hass: HomeAssistant, entry_id, host: str, mega_id: str, password: str):
@@ -33,9 +36,11 @@ class Mega:
             self.extender_port = {}
             if port_int is not None:
                self.port_int =int(port_int)
+            self.state = None
 
         class Extender:
             def __init__(self, port_type, title, config):
                 self.port_type = port_type
                 self.title = title
                 self.config = config
+                self.state = None
