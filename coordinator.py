@@ -46,10 +46,16 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             if response:
                 self.mega.ports[port].state = response
                 _LOGGER.warning(f" State of port {port} is {response}")
+                if port_config.dev is DevI2C.PCA9685 or port_config.dev is DevI2C.MCP230XX:
+                    response = response.split(";")
+                    _LOGGER.warning(f" State of port {port} is {response}")
+                    for ext_port_number in range(16):
+                        self.mega.ports[port].extender_port[ext_port_number].state = response[ext_port_number]
         return cast(dict[str, Any], "result")
 
     async def async_config_entry_first_refresh(self) -> None:
         timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
+        response = None
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
@@ -59,11 +65,12 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                     response = await resp.text()
         except Exception as msg:
             _LOGGER.warning(f"MegaCoordinator http request error {type(msg)} args {msg.args}")
-        if "[45" in response:
-            self.ports_count = 45
-        self.firmware = PATT_FW.search(response).groups()[0]
-        await self.get_all_ports_config(self.mega.base_url, self.ports_count)
-        _LOGGER.warning(f"MegaCoordinator async_config_entry_first_refresh")
+        if response is not None:
+            if "[45" in response:
+                self.ports_count = 45
+            self.firmware = PATT_FW.search(response).groups()[0]
+            await self.get_all_ports_config(self.mega.base_url, self.ports_count)
+        # _LOGGER.warning(f"MegaCoordinator async_config_entry_first_refresh")
         await super().async_config_entry_first_refresh()
 
     async def get_all_ports_config(self, base_url, num_ports):

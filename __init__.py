@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
 from .coordinator import MegaCoordinator, MegaConfigEntry
 from .const import DOMAIN, IP_FOR_ENTITY
+from .http import MegaDView
 from .model import Mega
 
 _PLATFORMS: list[Platform] = [Platform.SWITCH]
@@ -17,7 +18,7 @@ _PLATFORMS: list[Platform] = [Platform.SWITCH]
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    # hass.http.register_view(MegaDView(hass))
+    hass.http.register_view(MegaDView(hass))
     return True
 
 # TODO Update entry annotation
