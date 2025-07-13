@@ -13,7 +13,7 @@ from .const import DOMAIN, IP_FOR_ENTITY
 from .http import MegaDView
 from .model import Mega
 
-_PLATFORMS: list[Platform] = [Platform.SWITCH]
+_PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.LIGHT, Platform.BINARY_SENSOR]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,16 +33,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MegaConfigEntry) -> bool
     await entry.runtime_data.async_config_entry_first_refresh()
     _LOGGER.warning("Before sensors init actions")
     entity_registry = async_get(hass)
-    device_registry = async_get_device_registry(hass)
+    # device_registry = async_get_device_registry(hass)
 
 
     current_entities = set()
-        # 'P' + str(port)
     for port, port_model in hass.data[DOMAIN][entry.entry_id].ports.items():
         if hass.data[DOMAIN][entry.entry_id].ports[port].extender_port:
             for port_extender in range(16):
-                current_entities.add('P' + str(port)+ 'e' + str(port_extender))
-        else: current_entities.add('P' + str(port))
+                current_entities.add(entry.title + f"_{port:02}"+ 'e' + f"{port_extender:02}")
+        else: current_entities.add(entry.title + f"_{port:02}")
 
 
     all_entities = {

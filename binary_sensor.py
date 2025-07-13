@@ -1,6 +1,8 @@
 import logging
+import re
 from typing import cast
 
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -25,21 +27,26 @@ async def async_setup_entry(hass, entry, async_add_entities):
         hass.data[DOMAIN]["ports"][entry.entry_id] = []
 
     for mega_port, port_entity in mega.ports.items():
-        if port_entity.port_type is Type.OUT and port_entity.mode is Mode.SW:
-            entities.append(MegaSwitch(hass, mega_port, mega_coordinator, mega, None))
-        if port_entity.port_type is Type.OUT and port_entity.mode is Mode.DS2413:
-            entities.append(MegaSwitch(hass, mega_port, mega_coordinator, mega, "A"))
-            entities.append(MegaSwitch(hass, mega_port, mega_coordinator, mega, "B"))
-        if port_entity.extender_port:
-            for ext_port, ext_port_entity in port_entity.extender_port.items():
-                if ext_port_entity.port_type is MCP230XXType.OUT or ext_port_entity.port_type is PCA9685Type.SW:
-                    entities.append(MegaSwitch(hass, mega_port, mega_coordinator, mega, ext_port))
+        port_extender_int = next(
+            (
+                port
+                for port, port_entity in mega.ports.items()
+                if port_entity.port_int == mega_port
+            ), None
+        )
+        if port_extender_int is None:
+            if port_entity.port_type is Type.IN:
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None))
+            if port_entity.extender_port:
+                for ext_port, ext_port_entity in port_entity.extender_port.items():
+                    if ext_port_entity.port_type is MCP230XXType.IN:
+                        entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, ext_port))
 
     hass.data[DOMAIN]["ports"][entry.entry_id].extend(entities)
     async_add_entities(entities)
 
 
-class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
+class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
     def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port):
         self.hass = hass
         if extender_port is not None:
@@ -57,33 +64,6 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return self.mega.device_info(self.coordinator.firmware)
-
-    async def async_turn_on(self, **kwargs):
-        if self.eport is not None:
-            if isinstance(self.eport, int):
-                cmd = f"cmd={self.port}e{self.eport}:1"
-            else:
-                cmd = f"cmd={self.port}{self.eport}:1"
-        else:
-            cmd = f"cmd={self.port}:1"
-        response = await self.coordinator.send_request(cmd)
-        if response:
-            self._is_on = True
-            self.async_write_ha_state()
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs):
-        if self.eport is not None:
-            if isinstance(self.eport, int):
-                cmd = f"cmd={self.port}e{self.eport}:0"
-            else:
-                cmd = f"cmd={self.port}{self.eport}:0"
-        else:
-            cmd = f"cmd={self.port}:0"
-        response = await self.coordinator.send_request(cmd)
-        if response:
-            self._is_on = False
-            self.async_write_ha_state()
 
     @property
     def unique_id(self):
@@ -104,6 +84,7 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
         else:
             if self.mega.ports[self.port].state:
                 state = self.mega.ports[self.port].state
+        state = state.split("/")[0]
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if state == 'ON':
             self._is_on = True
@@ -121,6 +102,7 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
         else:
             if self.mega.ports[self.port].state:
                 state = self.mega.ports[self.port].state
+        state = state.split("/")[0]
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if state == 'ON':
             self._is_on = True

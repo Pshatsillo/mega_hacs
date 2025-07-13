@@ -17,12 +17,13 @@ class Mega:
         self.ports = {}
         self.http_timeout = 2
 
-    def device_info(self)-> DeviceInfo:
+    def device_info(self, firmware)-> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, f"mega{self.mega_id}")},
             name=f"Mega device ID: {self.mega_id}",
             manufacturer= "AB-LOG.RU",
             model_id=f"Mega-2561",
+            sw_version=f"{firmware}",
             configuration_url=f"http://{self.host}/{self.password}",
         )
     class Port:
