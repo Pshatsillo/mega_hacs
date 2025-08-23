@@ -151,7 +151,12 @@ def parse_port_config(mega, port, html, ext=None):
                     config = parse_as_json(emt_value)
                 if Type(int(pty_value)) is Type.I2C:
                     mode = ModeI2C(int(m_value))
-                    dev = DevI2C(int(d_value))
+                    if d_value == 20 or d_value == 21 or d_value == 0:
+                        dev = DevI2C(int(d_value))
+                    else:
+                        d_fs = d.find("option", selected=True).next if d else None
+                        dev = None
+                        _LOGGER.warning(f"sensor: {d_fs} at port {port}")
                 else:
                     mode = Mode(int(m_value))
                     dev = Dev(int(d_value))
@@ -162,7 +167,7 @@ def parse_port_config(mega, port, html, ext=None):
                 return None
 
     except Exception as e:
-        _LOGGER.debug(f"Ошибка парсинга данных для порта {port}: {e}")
+        _LOGGER.error(f"Ошибка парсинга данных для порта {port}: {e.args}")
         return None
 
 

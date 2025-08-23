@@ -37,3 +37,6 @@ class Dev(Enum):
     DHT11 = 1
     DHT22 = 2
     ONEWIRE = 3
+    IB = 4
+    ONEWIREBUS = 5
+    W26 = 6
