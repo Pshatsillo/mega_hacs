@@ -149,7 +149,7 @@ class MegaLight(CoordinatorEntity[MegaCoordinator], LightEntity):
                 if self.mega.ports[self.port].extender_port[self.eport].state:
                     state = self.mega.ports[self.port].extender_port[self.eport].state
         else:
-            if self.mega.ports[self.port].state:
+            if self.mega.ports[self.port].state is not None:
                 state = self.mega.ports[self.port].state
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if state != 0:

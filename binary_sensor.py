@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import re
+from time import sleep
 from typing import cast
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -37,6 +39,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         if port_extender_int is None:
             if port_entity.port_type is Type.IN:
                 entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None))
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, sp=True))
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, lp=True))
             if port_entity.extender_port:
                 for ext_port, ext_port_entity in port_entity.extender_port.items():
                     if ext_port_entity.port_type is MCP230XXType.IN:
@@ -47,18 +51,24 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
-    def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port):
+    def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port, sp=None, lp=None):
         self.hass = hass
         if extender_port is not None:
             self._unique_id = f"{mega.mega_id}_{port:02}e{extender_port:02}"
         else:
             self._unique_id = f"{mega.mega_id}_{port:02}"
+        if sp is not None:
+            self._unique_id += f"_SP"
+        if lp is not None:
+            self._unique_id += f"_LP"
         self._attr_name = self._unique_id
         self.eport = extender_port
         self._is_on = False
         self.port = port
         self.coordinator = coordinator
         self.mega = mega
+        self.sp = sp
+        self.lp = lp
         super().__init__(coordinator)
 
     @property
@@ -76,24 +86,25 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        state: str = ""
-        if self.eport is not None:
-            if isinstance(self.eport, int):
-                if self.mega.ports[self.port].extender_port[self.eport].state:
-                    state = self.mega.ports[self.port].extender_port[self.eport].state
-        else:
-            if self.mega.ports[self.port].state:
-                state = self.mega.ports[self.port].state
-        state = state.split("/")[0]
-        # _LOGGER.warning(f"Mega port {self.port} state: {state}")
-        if state == 'ON':
-            self._is_on = True
-        else:
-            self._is_on = False
-        self.async_write_ha_state()
-        super()._handle_coordinator_update()
+        if self.sp is None:
+            state: str = ""
+            if self.eport is not None:
+                if isinstance(self.eport, int):
+                    if self.mega.ports[self.port].extender_port[self.eport].state:
+                        state = self.mega.ports[self.port].extender_port[self.eport].state
+            else:
+                if self.mega.ports[self.port].state:
+                    state = self.mega.ports[self.port].state
+            state = state.split("/")[0]
+            # _LOGGER.warning(f"Mega port {self.port} state: {state}")
+            if state == 'ON':
+                self._is_on = True
+            else:
+                self._is_on = False
+            self.async_write_ha_state()
+            super()._handle_coordinator_update()
 
-    def incoming_update(self):
+    def incoming_update(self, sp =None, lp=None, status=None):
         state: str = ""
         if self.eport is not None:
             if isinstance(self.eport, int):
@@ -104,8 +115,18 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
                 state = self.mega.ports[self.port].state
         state = state.split("/")[0]
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
-        if state == 'ON':
-            self._is_on = True
+        if sp is None and self.sp is None and lp is None and self.lp is None:
+            if state == 'ON':
+                self._is_on = True
+            else:
+                self._is_on = False
+            self.async_write_ha_state()
+        elif self.sp is not None and lp is True:
+            self.lp = True
         else:
-            self._is_on = False
-        self.async_write_ha_state()
+            if self.sp is True and self.lp is True:
+                self.lp = None
+            elif status is not None:
+                self._is_on = status
+                self.async_write_ha_state()
+        _LOGGER.warning(f"sensor: {self._unique_id}: sp = {self.sp}, lp = {self.lp}, status = {status}, http lp = {lp}, http sp = {sp}")

@@ -13,7 +13,7 @@ from .const import DOMAIN, IP_FOR_ENTITY
 from .http import MegaDView
 from .model import Mega
 
-_PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.LIGHT, Platform.BINARY_SENSOR]
+_PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.LIGHT, Platform.BINARY_SENSOR, Platform.SENSOR]
 
 _LOGGER = logging.getLogger(__name__)
 

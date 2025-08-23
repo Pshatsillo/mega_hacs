@@ -45,10 +45,10 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             response = await self.send_request(cmd)
             if response:
                 self.mega.ports[port].state = response
-                _LOGGER.warning(f" State of port {port} is {response}")
+                # _LOGGER.warning(f" State of port {port} is {response}")
                 if port_config.dev is DevI2C.PCA9685 or port_config.dev is DevI2C.MCP230XX:
                     response = response.split(";")
-                    _LOGGER.warning(f" State of port {port} is {response}")
+                    # _LOGGER.warning(f" State of port {port} is {response}")
                     for ext_port_number in range(16):
                         self.mega.ports[port].extender_port[ext_port_number].state = response[ext_port_number]
         return cast(dict[str, Any], "result")
