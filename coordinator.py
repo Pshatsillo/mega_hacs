@@ -5,6 +5,8 @@ import re
 from typing import Any, cast
 
 import aiohttp
+import httpx
+import requests
 from bs4 import BeautifulSoup
 
 from homeassistant.config_entries import ConfigEntry
@@ -100,6 +102,15 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         return False
 
 
+def scan_port_for_sensors(mega, port, inited_sensor_type):
+    response = httpx.get(f'{mega.base_url}/?pt={port}&cmd=scan')
+    sensors = {}
+    sensors["Test"] = "wrr"
+    sensors["Test1"] = "wrt"
+    _LOGGER.warning(f"inited sensor: {inited_sensor_type} at port {port}")
+    return sensors
+
+
 def parse_port_config(mega, port, html, ext=None):
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -154,9 +165,9 @@ def parse_port_config(mega, port, html, ext=None):
                     if d_value == 20 or d_value == 21 or d_value == 0:
                         dev = DevI2C(int(d_value))
                     else:
-                        d_fs = d.find("option", selected=True).next if d else None
-                        dev = None
-                        _LOGGER.warning(f"sensor: {d_fs} at port {port}")
+                        #TODO сделать парсинг датчиков на порту
+                        inited_sensor_type = d.find("option", selected=True).next if d else None
+                        dev = scan_port_for_sensors(mega, port, inited_sensor_type)
                 else:
                     mode = Mode(int(m_value))
                     dev = Dev(int(d_value))
