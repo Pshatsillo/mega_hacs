@@ -27,7 +27,7 @@ class Mega:
             configuration_url=f"http://{self.host}/{self.password}",
         )
     class Port:
-        def __init__(self, port, port_type, mode, dev, port_int, title, config):
+        def __init__(self, port, port_type, mode, dev, port_int, title, config, misc):
             self.port_type = port_type
             self.mode = mode
             self.dev = dev
@@ -38,6 +38,7 @@ class Mega:
             if port_int is not None:
                self.port_int =int(port_int)
             self.state = None
+            self.misc = misc
 
         class Extender:
             def __init__(self, port_type, title, config):

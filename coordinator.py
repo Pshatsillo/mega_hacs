@@ -43,16 +43,39 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the Mega."""
         for port, port_config in self.mega.ports.items():
-            cmd = f"pt={port}&cmd=get"
-            response = await self.send_request(cmd)
-            if response:
-                self.mega.ports[port].state = response
-                # _LOGGER.warning(f" State of port {port} is {response}")
-                if port_config.dev is DevI2C.PCA9685 or port_config.dev is DevI2C.MCP230XX:
-                    response = response.split(";")
+            if isinstance(port_config.dev, dict):
+                if self.mega.ports[port].state is None:
+                    self.mega.ports[port].state = {}
+                for sensor_name, sensor in port_config.dev.items():
+                    if sensor["Init"]:
+                        cmd = f"pt={port}&cmd=get"
+                        response = await self.send_request(cmd)
+                        if response:
+                            for sensor_type, sensor_param in sensor["Parameters"].items():
+                                self.mega.ports[port].state[sensor_name] = {sensor_type:response}
+                                pass
+                    else:
+                        for sensor_type, sensor_param in sensor["Parameters"].items():
+                            cmd = f"pt={port}&scl={port_config.misc}&i2c_dev={sensor_name}&{sensor_param["path"]}"
+                            response = await self.send_request(cmd)
+                            if response:
+                                if sensor_name not in self.mega.ports[port].state:
+                                    self.mega.ports[port].state[sensor_name] = {sensor_type:response}
+                                else:
+                                    self.mega.ports[port].state[sensor_name][sensor_type] = response
+                                pass
+                    # _LOGGER.warning(f" Updating i2c sensor at port {port} is {sensor}")
+            else:
+                cmd = f"pt={port}&cmd=get"
+                response = await self.send_request(cmd)
+                if response:
+                    self.mega.ports[port].state = response
                     # _LOGGER.warning(f" State of port {port} is {response}")
-                    for ext_port_number in range(16):
-                        self.mega.ports[port].extender_port[ext_port_number].state = response[ext_port_number]
+                    if port_config.dev is DevI2C.PCA9685 or port_config.dev is DevI2C.MCP230XX:
+                        response = response.split(";")
+                        # _LOGGER.warning(f" State of port {port} is {response}")
+                        for ext_port_number in range(16):
+                            self.mega.ports[port].extender_port[ext_port_number].state = response[ext_port_number]
         return cast(dict[str, Any], "result")
 
     async def async_config_entry_first_refresh(self) -> None:
@@ -61,8 +84,8 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
-                        f"https://raw.githubusercontent.com/Pshatsillo/openhab2MegadBinding/refs/heads/V4_n/sensors.json") as resp:
-                    self.sensorsList = json.loads(await resp.text())
+                        f"https://raw.githubusercontent.com/Pshatsillo/openhab2MegadBinding/refs/heads/jsons/sensors.json") as resp:
+                    self.sensorsList = json.loads(await resp.text())["sensors"]
                 async with session.get(self.mega.base_url) as resp:
                     response = await resp.text()
         except Exception as msg:
@@ -83,6 +106,10 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                 result: Mega.Port = await fetch_port_config(self.mega, session, base_url, port)
                 if result is not None:
                     self.mega.ports[port] = result
+                    if result.mode is ModeI2C.SDA:
+                        sensors = await scan_port_for_sensors(self.mega, self.sensorsList, port)
+                        result.dev = sensors
+                        _LOGGER.warning(f"Sensors: {sensors} ")
                     if result.port_type is Type.I2C and result.dev is DevI2C.MCP230XX or result.dev is DevI2C.PCA9685:
                         for port_extender in range(16):
                             extender_result = await fetch_port_config(self.mega, session, base_url, port, port_extender)
@@ -102,13 +129,29 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         return False
 
 
-def scan_port_for_sensors(mega, port, inited_sensor_type):
-    response = httpx.get(f'{mega.base_url}/?pt={port}&cmd=scan')
-    sensors = {}
-    sensors["Test"] = "wrr"
-    sensors["Test1"] = "wrt"
-    _LOGGER.warning(f"inited sensor: {inited_sensor_type} at port {port}")
-    return sensors
+async def scan_port_for_sensors(mega, sensors_list, port):
+        sensors = {}
+        url = f'{mega.base_url}?pt={port}&cmd=scan'
+        timeout = aiohttp.ClientTimeout(total=mega.http_timeout, connect=1, sock_connect=1, sock_read=1)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        rsp = await response.text(encoding="windows-1251")
+            except aiohttp.ClientError as e:
+                _LOGGER.debug(f"Ошибка отправки запроса: {e} url:{url}")
+        txt = rsp.split("<br>")
+        for founded_sensor in txt:
+            if mega.ports[port].dev in founded_sensor:
+                sensors[mega.ports[port].dev.lower()] = sensors_list[mega.ports[port].dev.lower()]
+            else:
+                split_sensor_string = founded_sensor.split(" - ")
+                if len(split_sensor_string) == 2:
+                    soup = BeautifulSoup(split_sensor_string[1], "html.parser")
+                    sensors[soup.find("a").next.lower()] = sensors_list[soup.find("a").next.lower()]
+                    _LOGGER.debug(f"inited sensor: {soup.find("a").next.lower()} at port {port}")
+        # _LOGGER.warning(f"inited sensor: {inited_sensor_type} at port {port}")
+        return sensors
 
 
 def parse_port_config(mega, port, html, ext=None):
@@ -146,12 +189,14 @@ def parse_port_config(mega, port, html, ext=None):
             emt = form.find("input", {"name": "emt"})
             d = form.find("select", {"name": "d"})
             inta = form.find("input", {"name": "inta"})
+            misc = form.find("input", {"name": "misc"})
 
             pty_value = pty.find("option", selected=True)["value"] if pty else None
             m_value = m.find("option", selected=True)["value"] if m else "0"
             emt_value = emt["value"] if emt else None
             d_value = d.find("option", selected=True)["value"] if d else "0"
             inta_value = inta["value"] if inta else None
+            misc = misc["value"] if misc else None
 
             if pty_value is not None and pty_value != "255":
                 title = None
@@ -165,14 +210,15 @@ def parse_port_config(mega, port, html, ext=None):
                     if d_value == 20 or d_value == 21 or d_value == 0:
                         dev = DevI2C(int(d_value))
                     else:
-                        #TODO сделать парсинг датчиков на порту
-                        inited_sensor_type = d.find("option", selected=True).next if d else None
-                        dev = scan_port_for_sensors(mega, port, inited_sensor_type)
+                    #     #TODO сделать парсинг датчиков на порту
+                       if mode is not ModeI2C.SCL:
+                        dev = d.find("option", selected=True).next if d else None
+                    #         dev = scan_port_for_sensors(mega, port, inited_sensor_type)
                 else:
                     mode = Mode(int(m_value))
                     dev = Dev(int(d_value))
                 if mode is not ModeI2C.SCL:
-                    return Mega.Port(port, Type(int(pty_value)), mode, dev, inta_value, title, config)
+                    return Mega.Port(port, Type(int(pty_value)), mode, dev, inta_value, title, config, misc)
                 return None
             else:
                 return None
