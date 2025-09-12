@@ -64,43 +64,55 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
         return self.mega.device_info(self.coordinator.firmware)
 
     async def async_turn_on(self, **kwargs):
-        is_on = None
         if self.eport is not None:
             if isinstance(self.eport, int):
-                cmd = f"cmd={self.port}e{self.eport}:1"
+                if self.invert:
+                    cmd = f"cmd={self.port}e{self.eport}:0"
+                else:
+                    cmd = f"cmd={self.port}e{self.eport}:1"
             else:
-                cmd = f"cmd={self.port}{self.eport}:1"
+                if self.invert:
+                    cmd = f"cmd={self.port}{self.eport}:0"
+                else:
+                    cmd = f"cmd={self.port}{self.eport}:1"
         else:
-            cmd = f"cmd={self.port}:1"
+            if self.invert:
+                cmd = f"cmd={self.port}:0"
+            else:
+                cmd = f"cmd={self.port}:1"
         response = await self.coordinator.send_request(cmd)
         if response:
-            if self.invert:
-                is_on = False
-            else:
-                is_on = True
-        self._is_on = is_on
+            self._is_on = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
-        is_on = None
         if self.eport is not None:
             if isinstance(self.eport, int):
-                cmd = f"cmd={self.port}e{self.eport}:0"
+                if self.invert:
+                    cmd = f"cmd={self.port}e{self.eport}:1"
+                else:
+                    cmd = f"cmd={self.port}e{self.eport}:0"
             else:
-                cmd = f"cmd={self.port}{self.eport}:0"
+                if self.invert:
+                    cmd = f"cmd={self.port}{self.eport}:1"
+                else:
+                    cmd = f"cmd={self.port}{self.eport}:0"
         else:
-            cmd = f"cmd={self.port}:0"
+            if self.invert:
+                cmd = f"cmd={self.port}:1"
+            else:
+                cmd = f"cmd={self.port}:0"
         response = await self.coordinator.send_request(cmd)
         if response:
-            if self.invert:
-                is_on = True
-            else:
-                is_on = False
-            self._is_on = is_on
+            self._is_on = False
             self.async_write_ha_state()
 
     @property
     def invert(self):
+        if self.mega.ports[self.port].config is not None:
+            if "i" in self.mega.ports[self.port].config:
+                _LOGGER.debug("Mega hardware config found, invert true")
+                return True
         if self.custom_config is not None:
             return self.custom_config.get(self.port, {}).get("invert")
         return False
@@ -126,9 +138,15 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
                 state = self.mega.ports[self.port].state
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if state == 'ON':
-            self._is_on = True
+            if self.invert:
+                self._is_on = False
+            else:
+                self._is_on = True
         else:
-            self._is_on = False
+            if self.invert:
+                self._is_on = True
+            else:
+                self._is_on = False
         self.async_write_ha_state()
         super()._handle_coordinator_update()
 
@@ -143,7 +161,13 @@ class MegaSwitch(CoordinatorEntity[MegaCoordinator], SwitchEntity):
                 state = self.mega.ports[self.port].state
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if state == 'ON':
-            self._is_on = True
+            if self.invert:
+                self._is_on = False
+            else:
+                self._is_on = True
         else:
-            self._is_on = False
+            if self.invert:
+                self._is_on = True
+            else:
+                self._is_on = False
         self.async_write_ha_state()

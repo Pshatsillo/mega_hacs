@@ -90,6 +90,16 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
     def is_on(self):
         return self._is_on
 
+    @property
+    def invert(self):
+        if self.mega.ports[self.port].config is not None:
+            if "i" in self.mega.ports[self.port].config:
+                _LOGGER.debug("Mega hardware config found, invert true")
+                return True
+        if self.custom_config is not None:
+            return self.custom_config.get(self.port, {}).get("invert")
+        return False
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -105,9 +115,15 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
             state = state.split("/")[0]
             # _LOGGER.warning(f"Mega port {self.port} state: {state}")
             if state == 'ON':
-                self._is_on = True
+                if self.invert:
+                    self._is_on = False
+                else:
+                    self._is_on = True
             else:
-                self._is_on = False
+                if self.invert:
+                    self._is_on = True
+                else:
+                    self._is_on = False
             self.async_write_ha_state()
             super()._handle_coordinator_update()
 
@@ -124,9 +140,15 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         if sp is None and self.sp is None and lp is None and self.lp is None:
             if state == 'ON':
-                self._is_on = True
+                if self.invert:
+                    self._is_on = False
+                else:
+                    self._is_on = True
             else:
-                self._is_on = False
+                if self.invert:
+                    self._is_on = True
+                else:
+                    self._is_on = False
             self.async_write_ha_state()
         elif self.sp is not None and lp is True:
             self.lp = True
