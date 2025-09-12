@@ -1,18 +1,17 @@
-"""DataUpdateCoordinator for the Adax component."""
+"""DataUpdateCoordinator for the megad component."""
+import asyncio
 import json
 import logging
 import re
 from typing import Any, cast
 
 import aiohttp
-import httpx
-import requests
 from bs4 import BeautifulSoup
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from .const import SCAN_INTERVAL, DOMAIN, PATT_FW
+from .const import SCAN_INTERVAL, DOMAIN, PATT_FW, SENSORS_JSON
 from .enums import Type, Mode, Dev, ModeI2C, DevI2C, MCP230XXType, PCA9685Type
 from .model import Mega
 
@@ -69,8 +68,22 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                 cmd = f"pt={port}&cmd=get"
                 response = await self.send_request(cmd)
                 if response:
-                    self.mega.ports[port].state = response
-                    # _LOGGER.warning(f" State of port {port} is {response}")
+                    #_LOGGER.warning(f" State of port {port} is {response}")
+                    if port_config.dev is Dev.ONEWIREBUS:
+                        self.mega.ports[port].state = {}
+                        if response != "busy":
+                            bus_list = response.split(';')
+                            for ow_device in bus_list:
+                                address, value = ow_device.split(':')
+                                self.mega.ports[port].state[address] = value
+                        else:
+                            _LOGGER.debug("onewire response is busy")
+                    else:
+                        if len(response.split(":")) == 2:
+                            t, value = response.split(":")
+                            self.mega.ports[port].state = value
+                        else:
+                            self.mega.ports[port].state = response
                     if port_config.dev is DevI2C.PCA9685 or port_config.dev is DevI2C.MCP230XX:
                         response = response.split(";")
                         # _LOGGER.warning(f" State of port {port} is {response}")
@@ -84,15 +97,18 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
-                        f"https://raw.githubusercontent.com/Pshatsillo/openhab2MegadBinding/refs/heads/jsons/sensors.json") as resp:
+                        SENSORS_JSON) as resp:
                     self.sensorsList = json.loads(await resp.text())["sensors"]
                 async with session.get(self.mega.base_url) as resp:
                     response = await resp.text()
         except Exception as msg:
-            _LOGGER.warning(f"MegaCoordinator http request error {type(msg)} args {msg.args}")
+            _LOGGER.debug(f"MegaCoordinator http request error {type(msg)} args {msg.args}")
         if response is not None:
             if "[45" in response:
                 self.ports_count = 45
+            else:
+                if "2561" in response:
+                    self.ports_count = 37
             self.firmware = PATT_FW.search(response).groups()[0]
             await self.get_all_ports_config(self.mega.base_url, self.ports_count)
         # _LOGGER.warning(f"MegaCoordinator async_config_entry_first_refresh")
@@ -109,7 +125,11 @@ class MegaCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                     if result.mode is ModeI2C.SDA:
                         sensors = await scan_port_for_sensors(self.mega, self.sensorsList, port)
                         result.dev = sensors
-                        _LOGGER.warning(f"Sensors: {sensors} ")
+                        _LOGGER.debug(f"Sensors: {sensors} ")
+                    if result.dev is Dev.ONEWIREBUS:
+                        _LOGGER.debug(f"Found onewire bus sensors at port {port}")
+                        sensors = await get_ow_bus_sensors(self.mega, port)
+                        result.misc = sensors
                     if result.port_type is Type.I2C and result.dev is DevI2C.MCP230XX or result.dev is DevI2C.PCA9685:
                         for port_extender in range(16):
                             extender_result = await fetch_port_config(self.mega, session, base_url, port, port_extender)
@@ -140,7 +160,7 @@ async def scan_port_for_sensors(mega, sensors_list, port):
                         rsp = await response.text(encoding="windows-1251")
             except aiohttp.ClientError as e:
                 _LOGGER.debug(f"Ошибка отправки запроса: {e} url:{url}")
-        txt = rsp.split("<br>")
+            txt = rsp.split("<br>")
         for founded_sensor in txt:
             if mega.ports[port].dev in founded_sensor:
                 sensors[mega.ports[port].dev.lower()] = sensors_list[mega.ports[port].dev.lower()]
@@ -152,6 +172,30 @@ async def scan_port_for_sensors(mega, sensors_list, port):
                     _LOGGER.debug(f"inited sensor: {soup.find("a").next.lower()} at port {port}")
         # _LOGGER.warning(f"inited sensor: {inited_sensor_type} at port {port}")
         return sensors
+
+async def get_ow_bus_sensors(mega, port):
+    rsp = ""
+    if rsp.lower() == "busy" or rsp == "":
+        for i in range(5):
+            await asyncio.sleep(0.85)
+            url = f"{mega.base_url}?pt={port}&cmd=list"
+            timeout = aiohttp.ClientTimeout(total=mega.http_timeout, connect=1, sock_connect=1, sock_read=1)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            rsp = await response.text(encoding="windows-1251")
+                except aiohttp.ClientError as e:
+                    _LOGGER.debug(f"Ошибка отправки запроса: {e} url:{url}")
+            if rsp.lower() != "busy":
+                break
+    ow_sensors = {}
+    txt = rsp.split(";")
+    for sensor in txt:
+        separated_sensor = sensor.split(":")
+        _LOGGER.debug(f"sensor found {separated_sensor}")
+        ow_sensors[separated_sensor[0]] = separated_sensor[1]
+    return ow_sensors
 
 
 def parse_port_config(mega, port, html, ext=None):

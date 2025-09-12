@@ -9,7 +9,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN
+from .const import DOMAIN, CUSTOM_CONFIG
 from .coordinator import MegaCoordinator
 from .enums import Type, Mode, MCP230XXType, PCA9685Type
 from .model import Mega
@@ -20,6 +20,10 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass, entry, async_add_entities):
     mega_coordinator = cast(MegaCoordinator, entry.runtime_data)
     mega = hass.data[DOMAIN][entry.entry_id]
+    entities = []
+    custom_config = None
+    if mega.mega_id in hass.data[DOMAIN][CUSTOM_CONFIG]:
+        custom_config = hass.data[DOMAIN][CUSTOM_CONFIG][mega.mega_id]
     entities = []
 
     if "ports" not in hass.data[DOMAIN]:
@@ -38,20 +42,20 @@ async def async_setup_entry(hass, entry, async_add_entities):
         )
         if port_extender_int is None:
             if port_entity.port_type is Type.IN:
-                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None))
-                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, sp=True))
-                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, lp=True))
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, custom_config=custom_config))
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, sp=True, custom_config=custom_config))
+                entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, None, lp=True, custom_config=custom_config))
             if port_entity.extender_port:
                 for ext_port, ext_port_entity in port_entity.extender_port.items():
                     if ext_port_entity.port_type is MCP230XXType.IN:
-                        entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, ext_port))
+                        entities.append(MegaBinarySensor(hass, mega_port, mega_coordinator, mega, ext_port, custom_config=custom_config))
 
     hass.data[DOMAIN]["ports"][entry.entry_id].extend(entities)
     async_add_entities(entities)
 
 
 class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
-    def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port, sp=None, lp=None):
+    def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port, sp=None, lp=None, custom_config=None):
         self.hass = hass
         if extender_port is not None:
             self._unique_id = f"{mega.mega_id}_{port:02}e{extender_port:02}"
@@ -64,11 +68,14 @@ class MegaBinarySensor(CoordinatorEntity[MegaCoordinator], BinarySensorEntity):
         self._attr_name = self._unique_id
         self.eport = extender_port
         self._is_on = False
+        if sp is not None or lp is not None:
+            self._attr_entity_registry_enabled_default = False
         self.port = port
         self.coordinator = coordinator
         self.mega = mega
         self.sp = sp
         self.lp = lp
+        self.custom_config = custom_config
         super().__init__(coordinator)
 
     @property

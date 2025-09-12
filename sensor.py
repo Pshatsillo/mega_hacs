@@ -8,7 +8,7 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .enums import Type
+from .enums import Type, Dev
 from .model import Mega
 from .coordinator import MegaConfigEntry, MegaCoordinator
 from .const import DOMAIN
@@ -48,23 +48,33 @@ async def async_setup_entry(
                     for name, sensor in port_entity.dev.items():
                         for parameter, value in sensor["Parameters"].items():
                             entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor=sensor, parameter={parameter:value}, sensor_name=name))
+            if port_entity.port_type is Type.DSEN:
+                if port_entity.dev is Dev.ONEWIREBUS:
+                    for sensor_id in port_entity.misc:
+                        entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor_name=sensor_id))
+                if port_entity.dev is Dev.ONEWIRE:
+                    entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None))
     hass.data[DOMAIN]["ports"][entry.entry_id].extend(entities)
     async_add_entities(entities)
 
 
 class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
     """Representation of Mega sensor."""
+
     def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port, counter=None, sensor=None,
                  parameter:dict =None, sensor_name=None):
         self.hass = hass
         if extender_port is not None:
             self._unique_id = f"{mega.mega_id}_{port:02}e{extender_port:02}"
-        elif sensor_name is not None:
+        elif sensor_name is not None and sensor is not None:
             self._unique_id = f"{mega.mega_id}_{port:02}_{sensor_name}_{ list(parameter.keys())[0]}"
+        elif sensor_name is not None:
+            self._unique_id = f"{mega.mega_id}_{port:02}_{sensor_name}"
         else:
             self._unique_id = f"{mega.mega_id}_{port:02}"
         if counter is not None:
             self._unique_id += f"_Counter"
+            self._attr_entity_registry_enabled_default = False
         self._attr_name = self._unique_id
         self.eport = extender_port
         self._is_on = False
@@ -86,7 +96,9 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
         return self._unique_id
     @property
     def device_class(self) -> SensorDeviceClass:
-        if self.sensor is None:
+        if self.mega.ports[self.port].dev is Dev.ONEWIREBUS or self.mega.ports[self.port].dev is Dev.ONEWIRE:
+            return SensorDeviceClass.TEMPERATURE
+        elif self.sensor is None:
             return SensorDeviceClass.ENUM
         else:
             var = getattr(SensorDeviceClass, list(self.parameter.values())[0]["HASS"].upper())
@@ -95,7 +107,9 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
 
     @property
     def native_unit_of_measurement(self):
-        if self.sensor is None:
+        if self.mega.ports[self.port].dev is Dev.ONEWIREBUS or self.mega.ports[self.port].dev is Dev.ONEWIRE:
+            return UnitOfTemperature.CELSIUS
+        elif self.sensor is None:
             return None
         else:
             par = list(self.parameter.values())[0]["measurement"].split(".")
@@ -115,12 +129,16 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
                 if self.mega.ports[self.port].extender_port[self.eport].state:
                     state = self.mega.ports[self.port].extender_port[self.eport].state
         else:
-            if self.sensor is None:
-                if self.mega.ports[self.port].state:
-                    state = self.mega.ports[self.port].state
+            if self.mega.ports[self.port].dev is Dev.ONEWIREBUS:
+                if self.sensor_name in self.mega.ports[self.port].state:
+                    state = self.mega.ports[self.port].state[self.sensor_name]
+                else:
+                    _LOGGER.debug(f"sensor {self.sensor_name} not found in: {self.mega.ports[self.port].state}")
+            elif self.sensor is None:
+                    if self.mega.ports[self.port].state:
+                        state = self.mega.ports[self.port].state
             else:
                 state = self.mega.ports[self.port].state[self.sensor_name][list(self.parameter.keys())[0]]
-                pass
         if self.counter:
             state = state.split("/")[1]
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
@@ -130,7 +148,7 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
             try:
                 self.native_value = float(state)
             except:
-             _LOGGER.error(f"Cannot update sensor {self.name}")
+             _LOGGER.debug(f"Cannot update sensor {self.name}")
         self.async_write_ha_state()
         super()._handle_coordinator_update()
 
@@ -140,5 +158,11 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
             state = self.mega.ports[self.port].state
         if self.counter:
             state = state.split("/")[1]
-        self.native_value = int(state)
+        try:
+            self.native_value = int(state)
+        except:
+            try:
+                self.native_value = float(state)
+            except:
+                _LOGGER.debug(f"Cannot update sensor {self.name}")
         self.async_write_ha_state()

@@ -152,9 +152,12 @@ class MegaLight(CoordinatorEntity[MegaCoordinator], LightEntity):
             if self.mega.ports[self.port].state is not None:
                 state = self.mega.ports[self.port].state
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
-        if state != 0:
-            self._is_on = True
-            self._brightness = state
-        else:
-            self._is_on = False
+        try:
+            if state != 0:
+                self._is_on = True
+                self._brightness = state
+            else:
+                self._is_on = False
+        except:
+            pass
         self.async_write_ha_state()
