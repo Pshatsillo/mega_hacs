@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .enums import Type, Dev
 from .model import Mega
 from .coordinator import MegaConfigEntry, MegaCoordinator
-from .const import DOMAIN
+from .const import DOMAIN, CUSTOM_CONFIG
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,6 +25,9 @@ async def async_setup_entry(
     mega_coordinator = cast(MegaCoordinator, entry.runtime_data)
     mega = hass.data[DOMAIN][entry.entry_id]
     entities = []
+    custom_config = None
+    if mega.mega_id in hass.data[DOMAIN][CUSTOM_CONFIG]:
+        custom_config = hass.data[DOMAIN][CUSTOM_CONFIG][mega.mega_id]
 
     if "ports" not in hass.data[DOMAIN]:
         hass.data[DOMAIN]["ports"] = {}
@@ -42,18 +45,18 @@ async def async_setup_entry(
         )
         if port_extender_int is None:
             if port_entity.port_type is Type.IN:
-                entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, counter=True))
+                entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, counter=True, custom_config=custom_config))
             if port_entity.port_type is Type.I2C:
                 if isinstance(port_entity.dev, dict):
                     for name, sensor in port_entity.dev.items():
                         for parameter, value in sensor["Parameters"].items():
-                            entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor=sensor, parameter={parameter:value}, sensor_name=name))
+                            entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor=sensor, parameter={parameter:value}, sensor_name=name, custom_config=custom_config))
             if port_entity.port_type is Type.DSEN:
                 if port_entity.dev is Dev.ONEWIREBUS:
                     for sensor_id in port_entity.misc:
-                        entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor_name=sensor_id))
+                        entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, sensor_name=sensor_id, custom_config=custom_config))
                 if port_entity.dev is Dev.ONEWIRE:
-                    entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None))
+                    entities.append(MegaSensor(hass, mega_port, mega_coordinator, mega, None, custom_config=custom_config))
     hass.data[DOMAIN]["ports"][entry.entry_id].extend(entities)
     async_add_entities(entities)
 
@@ -62,7 +65,7 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
     """Representation of Mega sensor."""
 
     def __init__(self, hass, port, coordinator: MegaCoordinator, mega: Mega, extender_port, counter=None, sensor=None,
-                 parameter:dict =None, sensor_name=None):
+                 parameter:dict =None, sensor_name=None, custom_config=None):
         self.hass = hass
         if extender_port is not None:
             self._unique_id = f"{mega.mega_id}_{port:02}e{extender_port:02}"
@@ -85,6 +88,7 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
         self.sensor = sensor
         self.parameter = parameter
         self.sensor_name = sensor_name
+        self.custom_config = custom_config
         super().__init__(coordinator)
 
     @property
@@ -143,7 +147,7 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
             state = state.split("/")[1]
         # _LOGGER.warning(f"Mega port {self.port} state: {state}")
         try:
-            self.native_value = int(state)
+            self.native_value = self.filter(int(state))
         except:
             try:
                 self.native_value = float(state)
@@ -166,3 +170,9 @@ class MegaSensor(CoordinatorEntity[MegaCoordinator], SensorEntity):
             except:
                 _LOGGER.debug(f"Cannot update sensor {self.name}")
         self.async_write_ha_state()
+
+    def filter(self, param):
+        # self.entity_id
+        return param
+
+
