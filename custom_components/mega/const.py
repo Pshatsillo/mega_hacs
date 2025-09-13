@@ -6,6 +6,9 @@ from homeassistant.const import Platform
 
 DOMAIN = "mega"
 CONF_MEGA_ID = "mega_id"
+CONF_SENSORS_URL = "https://raw.githubusercontent.com/Pshatsillo/openhab2MegadBinding/refs/heads/jsons/sensors.json"
+CONF_LOCAL_SENSORS_LIST = "sensors.json"
+CONF_SENSORS_LIST = "sensors_github.json"
 CONF_DIMMER = "dimmer"
 CONF_SWITCH = "switch"
 CONF_KEY = 'key'

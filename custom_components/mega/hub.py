@@ -505,7 +505,7 @@ class MegaD:
             await asyncio.sleep(delay)
         return ret
 
-    async def get_config(self, nports=37):
+    async def get_config(self, nports=16):
         ret = defaultdict(lambda: defaultdict(list))
         ret["mqtt_id"] = await self.get_mqtt_id()
         ret["extenders"] = extenders = []
@@ -513,6 +513,13 @@ class MegaD:
         ret["ext_acts"] = ext_acts = {}
         ret["i2c_sensors"] = i2c_sensors = []
         ret["smooth"] = smooth = []
+        resp = await self.request()
+        if resp is not None:
+            if "[45" in resp:
+                nports = 45
+            else:
+                if "2561" in resp:
+                    nports = 37
         async for port, cfg in self.scan_ports(nports):
             _cust = self.customize.get(port)
             if not isinstance(_cust, dict):
@@ -593,8 +600,9 @@ class MegaD:
                 scan = cfg.src.find("a", text="I2C Scan")
                 self.lg.debug(f"find scan link: %s", scan)
                 if scan is not None:
+                    inited_sensor = cfg.src.form.find("select", {"name": "d"}).find("option", selected=True).next.lower()
                     page = await self.request(pt=port, cmd="scan")
-                    req, parsed = parse_scan_page(page)
+                    req, parsed = await parse_scan_page(self, page, inited_sensor)
                     self.lg.debug(f"scan results: %s", (req, parsed))
                     ret["i2c"][port].extend(parsed)
                     i2c_sensors.extend(req)

@@ -1,7 +1,15 @@
+import json
+import logging
+import os
 import typing
 from dataclasses import dataclass, astuple
 from urllib.parse import parse_qsl, urlparse
+
+import aiofiles
+import aiohttp
 from bs4 import BeautifulSoup
+
+from .const import DOMAIN, CONF_LOCAL_SENSORS_LIST, CONF_SENSORS_LIST, CONF_SENSORS_URL
 
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import (
@@ -14,7 +22,7 @@ from collections import namedtuple
 
 
 # DeviceType = namedtuple('DeviceType', 'device_class,unit_of_measurement,suffix')
-
+lg = logging.getLogger(__name__)
 @dataclass
 class DeviceType:
     device_class: typing.Optional[str] = None
@@ -23,10 +31,53 @@ class DeviceType:
     delay: typing.Optional[float] = None
 
 
-def parse_scan_page(page: str):
+async def parse_scan_page(mega, page: str, inited_sensor: str = None):
     ret = []
     req = []
+    sensors_list = None
+    local_sensors = None
     page = BeautifulSoup(page, features="lxml")
+    #reading local JSON file, with name CONF_LOCAL_SENSORS_LIST in const file
+    if os.path.exists(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}"):
+        lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}' exists.")
+        local_sensors = await read_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}")
+    else:
+        lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}' does not exist, creating")
+        await write_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}")
+    # downloading and reading file sensors from github
+    if os.path.exists(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}"):
+        json_data = None
+        remote_sensors_list = None
+        lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}' exists.")
+        remote_sensors_file = await read_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}")
+        remote_sensors_list = await download_sensors()
+        if remote_sensors_file is not None and remote_sensors_list is not None:
+                if remote_sensors_file["sensors"] == remote_sensors_list:
+                    lg.debug("list is identical")
+                else:
+                    lg.debug("not ident")
+                    try:
+                        async with aiofiles.open(
+                                f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}",
+                                mode='w') as f:
+                            await f.write(sensors_list)
+                    except Exception as e:
+                        lg.debug(f"An error occurred: {e}")
+
+    else:
+        lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}' does not exist, creating")
+        try:
+            timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                        CONF_SENSORS_URL) as resp:
+                    response = await resp.text()
+                    async with aiofiles.open(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}",
+                                             mode='w') as f:
+                        await f.write(response)
+                    sensors_list = json.loads(response)["sensors"]
+        except Exception as msg:
+            lg.debug(f"http request error {type(msg)} args {msg.args}")
     for x in page.find_all('a'):
         params = x.get('href')
         if params is None:
@@ -74,6 +125,40 @@ def parse_scan_page(page: str):
     return req, ret
 
 
+async def download_sensors():
+    try:
+        timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                    CONF_SENSORS_URL) as resp:
+                remote_sensors_list = json.loads(await resp.text())["sensors"]
+    except Exception as msg:
+        lg.debug(f"http request error {type(msg)} args {msg.args}")
+    return remote_sensors_list
+
+
+async def write_sensors_file(path: str):
+    try:
+        async with aiofiles.open(path,
+                                 mode='w') as f:
+            await f.write("{}")
+    except Exception as e:
+        lg.debug(f"An error occurred: {e}")
+
+
+async def read_sensors_file(path):
+    try:
+        async with aiofiles.open(path,
+                                 mode='r', encoding='utf-8') as f:
+            contents = await f.read()
+            json_data = json.loads(contents)
+    except json.JSONDecodeError:
+        print(
+            f"Error: Invalid JSON format in '{path}'")
+        return None
+    return json_data
+
+
 class Skip:
     pass
 
@@ -82,6 +167,18 @@ class Skip:
 class Request:
     delay: float = None
 
+
+# timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
+# response = None
+# try:
+#     async with aiohttp.ClientSession(timeout=timeout) as session:
+#         async with session.get(
+#                 SENSORS_JSON) as resp:
+#             self.sensorsList = json.loads(await resp.text())["sensors"]
+#         async with session.get(self.mega.base_url) as resp:
+#             response = await resp.text()
+# except Exception as msg:
+#     _LOGGER.debug(f"MegaCoordinator http request error {type(msg)} args {msg.args}")
 
 i2c_classes = {
     'htu21d': [

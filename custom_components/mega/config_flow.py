@@ -2,6 +2,7 @@
 import asyncio
 import logging
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries, core
@@ -25,7 +26,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_POLL_OUTS, default=False): bool,
         # vol.Optional(CONF_PORT_TO_SCAN, default=0): int,
         # vol.Optional(CONF_MQTT_INPUTS, default=False): bool,
-        vol.Optional(CONF_NPORTS, default=37): int,
+        # vol.Optional(CONF_NPORTS, default=37): int,
         vol.Optional(CONF_UPDATE_ALL, default=True): bool,
         vol.Optional(CONF_FAKE_RESPONSE, default=True): bool,
         vol.Optional(CONF_FORCE_D, default=True): bool,
@@ -79,7 +80,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             hub = await validate_input(self.hass, user_input)
             await hub.start()
             hub.new_naming=True
-            config = await hub.get_config(nports=user_input.get(CONF_NPORTS, 37))
+            config = await hub.get_config() # nports=user_input.get(CONF_NPORTS, 37)
             await hub.stop()
             hub.lg.debug(f'config loaded: %s', config)
             config.update(user_input)
@@ -139,7 +140,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(CONF_POLL_OUTS, default=e.get(CONF_POLL_OUTS, False)): bool,
                 # vol.Optional(CONF_PORT_TO_SCAN, default=e.get(CONF_PORT_TO_SCAN, 0)): int,
                 # vol.Optional(CONF_MQTT_INPUTS, default=e.get(CONF_MQTT_INPUTS, True)): bool,
-                vol.Optional(CONF_NPORTS, default=e.get(CONF_NPORTS, 37)): int,
+                # vol.Optional(CONF_NPORTS, default=e.get(CONF_NPORTS, 37)): int,
                 vol.Optional(CONF_RELOAD, default=False): bool,
                 vol.Optional(CONF_UPDATE_ALL, default=e.get(CONF_UPDATE_ALL, True)): bool,
                 vol.Optional(CONF_FAKE_RESPONSE, default=e.get(CONF_FAKE_RESPONSE, True)): bool,
