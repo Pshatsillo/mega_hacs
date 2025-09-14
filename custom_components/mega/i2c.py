@@ -20,7 +20,6 @@ from homeassistant.const import (
 )
 from collections import namedtuple
 
-
 # DeviceType = namedtuple('DeviceType', 'device_class,unit_of_measurement,suffix')
 lg = logging.getLogger(__name__)
 @dataclass
@@ -53,16 +52,10 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
         remote_sensors_list = await download_sensors()
         if remote_sensors_file is not None and remote_sensors_list is not None:
                 if remote_sensors_file["sensors"] == remote_sensors_list:
-                    lg.debug("list is identical")
+                    sensors_list = remote_sensors_file["sensors"]
                 else:
                     lg.debug("not ident")
-                    try:
-                        async with aiofiles.open(
-                                f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}",
-                                mode='w') as f:
-                            await f.write(sensors_list)
-                    except Exception as e:
-                        lg.debug(f"An error occurred: {e}")
+                    await write_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}", remote_sensors_list)
 
     else:
         lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}' does not exist, creating")
@@ -72,12 +65,11 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
                 async with session.get(
                         CONF_SENSORS_URL) as resp:
                     response = await resp.text()
-                    async with aiofiles.open(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}",
-                                             mode='w') as f:
-                        await f.write(response)
+                    await write_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}", response)
                     sensors_list = json.loads(response)["sensors"]
         except Exception as msg:
             lg.debug(f"http request error {type(msg)} args {msg.args}")
+    lg.debug(f"Loading sensors list {sensors_list}")
     for x in page.find_all('a'):
         params = x.get('href')
         if params is None:
@@ -137,11 +129,11 @@ async def download_sensors():
     return remote_sensors_list
 
 
-async def write_sensors_file(path: str):
+async def write_sensors_file(path: str, content = "{}"):
     try:
         async with aiofiles.open(path,
                                  mode='w') as f:
-            await f.write("{}")
+            await f.write(content)
     except Exception as e:
         lg.debug(f"An error occurred: {e}")
 
