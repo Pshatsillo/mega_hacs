@@ -197,7 +197,11 @@ class MegaI2C(FilterBadValues):
                 ret = ret
             ret = self.filter_value(ret)
             if ret is not None:
-                return str(ret)
+                if isinstance(ret, str):
+                    if not "CRC-error" in ret and not "NA" in ret:
+                        return str(ret)
+                else:
+                    return str(ret)
         except Exception:
             lg.exception('while parsing value')
             return None

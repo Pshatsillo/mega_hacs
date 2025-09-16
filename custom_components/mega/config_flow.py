@@ -11,7 +11,7 @@ from homeassistant.const import CONF_HOST, CONF_ID, CONF_PASSWORD, CONF_SCAN_INT
 from homeassistant.core import callback, HomeAssistant
 from .const import DOMAIN, CONF_RELOAD, \
     CONF_NPORTS, CONF_UPDATE_ALL, CONF_POLL_OUTS, CONF_FAKE_RESPONSE, CONF_FORCE_D, \
-    CONF_ALLOW_HOSTS, CONF_PROTECTED, CONF_RESTORE_ON_RESTART, CONF_UPDATE_TIME
+    CONF_ALLOW_HOSTS, CONF_PROTECTED, CONF_RESTORE_ON_RESTART, CONF_UPDATE_TIME, HA_VERSION
 from .hub import MegaD
 from . import exceptions
 
@@ -111,7 +111,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry):
-        self.config_entry = config_entry
+        if HA_VERSION < '2024.12':
+            self.config_entry = config_entry
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         new_naming = self.config_entry.data.get('new_naming', False)

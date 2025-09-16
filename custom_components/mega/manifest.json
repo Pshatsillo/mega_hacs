@@ -5,7 +5,8 @@
   "documentation": "https://github.com/andvikt/mega_hacs",
   "requirements": [
     "beautifulsoup4",
-    "lxml"
+    "lxml",
+    "aiofiles"
   ],
   "ssdp": [],
   "zeroconf": [],
@@ -15,5 +16,5 @@
     "@andvikt"
   ],
   "issue_tracker": "https://github.com/andvikt/mega_hacs/issues",
-  "version": "v1.1.9"
+  "version": "v1.2.0"
 }

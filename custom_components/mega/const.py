@@ -2,8 +2,11 @@
 import re
 from itertools import permutations
 
-from homeassistant.const import Platform
+from awesomeversion import AwesomeVersion
 
+from homeassistant.const import Platform, __version__
+
+HA_VERSION = AwesomeVersion(__version__)
 DOMAIN = "mega"
 CONF_MEGA_ID = "mega_id"
 CONF_SENSORS_URL = "https://raw.githubusercontent.com/Pshatsillo/openhab2MegadBinding/refs/heads/jsons/sensors.json"

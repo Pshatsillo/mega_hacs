@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -22,12 +23,112 @@ from collections import namedtuple
 
 # DeviceType = namedtuple('DeviceType', 'device_class,unit_of_measurement,suffix')
 lg = logging.getLogger(__name__)
+i2c_classes = {}
+
 @dataclass
 class DeviceType:
     device_class: typing.Optional[str] = None
     unit_of_measurement: typing.Optional[str] = None
     suffix: typing.Optional[str] = None
     delay: typing.Optional[float] = None
+    path: typing.Optional[str] = None
+
+
+def fill_i2c_classes(sensors):
+    for sensor_name, sensor in sensors.items():
+        i2c_classes[sensor_name] = []
+        for par_name, parameters in sensor["Parameters"].items():
+            if parameters["HASS"]:
+                device_class = getattr(SensorDeviceClass, parameters["HASS"].upper())
+            else:
+                device_class = None
+            if "request" in par_name:
+                i2c_classes[sensor_name].append(Request(delay=float(parameters["name"])))
+                break
+            if parameters["measurement"]:
+                par = parameters["measurement"].split(".")
+                if len(par) == 2:
+                    unit_of_measurement = getattr(getattr(__import__('homeassistant.const', fromlist=[None]), f"{par[0]}"), par[1])
+                else:
+                    unit_of_measurement = getattr(__import__('homeassistant.const', fromlist=[None]), par[0])
+            else:
+                unit_of_measurement = None
+            if "delay" in parameters:
+                i2c_classes[sensor_name].append(
+                    DeviceType(device_class, unit_of_measurement, par_name, path=parameters["path"], delay=float(parameters["delay"])))
+            else:
+                i2c_classes[sensor_name].append(DeviceType(device_class, unit_of_measurement, par_name, path=parameters["path"]))
+    # i2c_classes = {
+    # 'htu21d': [
+    #     DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'sht31': [
+    #     DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None, delay=1.5),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'max44009': [
+    #     DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
+    # ],
+    # 'bh1750': [
+    #     DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
+    # ],
+    # 'tsl2591': [
+    #     DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
+    # ],
+    # 'bmp180': [
+    #     DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'bmx280': [
+    #     DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    #     DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
+    # ],
+    # 'scd4x': [
+    #     Skip,
+    #     DeviceType(SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    #     DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
+    # ],
+    # 'dps368': [
+    #     DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'mlx90614': [
+    #     Skip,
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 'temp'),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 'object'),
+    # ],
+    # 'ptsensor': [
+    #     Skip,
+    #     Request(delay=3),  # запрос на измерение
+    #     DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'mcp9600': [
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),  # термопара
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),  # сенсор встроенный в микросхему
+    # ],
+    # 't67xx': [
+    #     DeviceType(SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, None)
+    # ],
+    # 'tmp117': [
+    #     DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
+    # ],
+    # 'ads1115': [
+    #     DeviceType(None, None, 'ch0'),
+    #     DeviceType(None, None, 'ch1'),
+    #     DeviceType(None, None, 'ch2'),
+    #     DeviceType(None, None, 'ch3'),
+    # ],
+    # 'ads1015': [
+    #     DeviceType(None, None, 'ch0'),
+    #     DeviceType(None, None, 'ch1'),
+    #     DeviceType(None, None, 'ch2'),
+    #     DeviceType(None, None, 'ch3'),
+    # ],
+# }
 
 
 async def parse_scan_page(mega, page: str, inited_sensor: str = None):
@@ -45,17 +146,18 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
         await write_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_LOCAL_SENSORS_LIST}")
     # downloading and reading file sensors from github
     if os.path.exists(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}"):
-        json_data = None
-        remote_sensors_list = None
         lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}' exists.")
         remote_sensors_file = await read_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}")
         remote_sensors_list = await download_sensors()
-        if remote_sensors_file is not None and remote_sensors_list is not None:
+        if remote_sensors_list is not None:
+            if remote_sensors_file is not None:
                 if remote_sensors_file["sensors"] == remote_sensors_list:
                     sensors_list = remote_sensors_file["sensors"]
                 else:
-                    lg.debug("not ident")
-                    await write_sensors_file(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}", remote_sensors_list)
+                    os.remove(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}")
+            else:
+                os.remove(f"{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}")
+                sensors_list = remote_sensors_list
 
     else:
         lg.debug(f"The path '{mega.hass.data["integrations"][DOMAIN].file_path}/{CONF_SENSORS_LIST}' does not exist, creating")
@@ -70,6 +172,12 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
         except Exception as msg:
             lg.debug(f"http request error {type(msg)} args {msg.args}")
     lg.debug(f"Loading sensors list {sensors_list}")
+    if sensors_list is not None:
+        sensors = sensors_list | local_sensors
+    else:
+        sensors = local_sensors
+    fill_i2c_classes(sensors)
+    scanned_sensors = page.currentTag.prettify().split("<br/>")
     for x in page.find_all('a'):
         params = x.get('href')
         if params is None:
@@ -78,9 +186,19 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
         dev = params.get('i2c_dev')
         if dev is None:
             continue
+        for l in scanned_sensors:
+            if dev in l:
+                if inited_sensor.upper() in l:
+                    dev = inited_sensor
+                    break
         classes = i2c_classes.get(dev, [])
         for i, c in enumerate(classes):
             _params = params.copy()
+            _params['i2c_dev'] = dev
+            if not c.path:
+                _params = {"pt": params.get('pt'), "cmd": "get"}
+            else:
+                _params['i2c_par'] = c.path.split("=")[1]
             if c is Skip:
                 continue
             elif c is Request:
@@ -92,7 +210,7 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
                 req.append(_params)
                 continue
             elif isinstance(c, DeviceType):
-                c, m, suffix, delay = astuple(c)
+                c, m, suffix, delay, path = astuple(c)
                 if delay is not None:
                     _params['delay'] = delay
             else:
@@ -104,8 +222,6 @@ async def parse_scan_page(mega, page: str, inited_sensor: str = None):
                 _dev = f'{dev}_{suffix}'
             else:
                 _dev = dev
-            if i > 0:
-                _params['i2c_par'] = i
 
             ret.append({
                 'id_suffix': _dev,
@@ -125,17 +241,17 @@ async def download_sensors():
                     CONF_SENSORS_URL) as resp:
                 remote_sensors_list = json.loads(await resp.text())["sensors"]
     except Exception as msg:
-        lg.debug(f"http request error {type(msg)} args {msg.args}")
+        lg.error(f"http request error {type(msg)} args {msg.args}")
     return remote_sensors_list
 
 
-async def write_sensors_file(path: str, content = "{}"):
+async def write_sensors_file(path: str, content:str = "{}"):
     try:
         async with aiofiles.open(path,
                                  mode='w') as f:
             await f.write(content)
     except Exception as e:
-        lg.debug(f"An error occurred: {e}")
+        lg.error(f"An error occurred: {e}")
 
 
 async def read_sensors_file(path):
@@ -145,7 +261,7 @@ async def read_sensors_file(path):
             contents = await f.read()
             json_data = json.loads(contents)
     except json.JSONDecodeError:
-        print(
+        lg.error(
             f"Error: Invalid JSON format in '{path}'")
         return None
     return json_data
@@ -159,87 +275,3 @@ class Skip:
 class Request:
     delay: float = None
 
-
-# timeout = aiohttp.ClientTimeout(total=2, connect=1, sock_connect=1, sock_read=1)
-# response = None
-# try:
-#     async with aiohttp.ClientSession(timeout=timeout) as session:
-#         async with session.get(
-#                 SENSORS_JSON) as resp:
-#             self.sensorsList = json.loads(await resp.text())["sensors"]
-#         async with session.get(self.mega.base_url) as resp:
-#             response = await resp.text()
-# except Exception as msg:
-#     _LOGGER.debug(f"MegaCoordinator http request error {type(msg)} args {msg.args}")
-
-i2c_classes = {
-    'htu21d': [
-        DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'sht31': [
-        DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None, delay=1.5),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'max44009': [
-        DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
-    ],
-    'bh1750': [
-        DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
-    ],
-    'tsl2591': [
-        DeviceType(SensorDeviceClass.ILLUMINANCE, LIGHT_LUX, None)
-    ],
-    'bmp180': [
-        DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'bmx280': [
-        DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-        DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
-    ],
-    'scd4x': [
-        Skip,
-        DeviceType(SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-        DeviceType(SensorDeviceClass.HUMIDITY, PERCENTAGE, None)
-    ],
-    'dps368': [
-        DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'mlx90614': [
-        Skip,
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 'temp'),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 'object'),
-    ],
-    'ptsensor': [
-        Skip,
-        Request(delay=3),  # запрос на измерение
-        DeviceType(SensorDeviceClass.PRESSURE, UnitOfPressure.BAR, None),
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'mcp9600': [
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),  # термопара
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),  # сенсор встроенный в микросхему
-    ],
-    't67xx': [
-        DeviceType(SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, None)
-    ],
-    'tmp117': [
-        DeviceType(SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, None),
-    ],
-    'ads1115': [
-        DeviceType(None, None, 'ch0'),
-        DeviceType(None, None, 'ch1'),
-        DeviceType(None, None, 'ch2'),
-        DeviceType(None, None, 'ch3'),
-    ],
-    'ads1015': [
-        DeviceType(None, None, 'ch0'),
-        DeviceType(None, None, 'ch1'),
-        DeviceType(None, None, 'ch2'),
-        DeviceType(None, None, 'ch3'),
-    ],
-}
