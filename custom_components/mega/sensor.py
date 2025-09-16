@@ -93,7 +93,7 @@ class FilterBadValues(MegaPushEntity, SensorEntity):
 
     def filter_value(self, value):
         try:
-            if isinstance(value, str) and value == 'NA':
+            if isinstance(value, str) and (value == 'NA' or value == 'CRC-error'):
                 value = None
                 
             if value is not None and \
